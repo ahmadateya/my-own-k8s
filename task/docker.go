@@ -54,7 +54,7 @@ func (d *Docker) Run() DockerResult {
 	reader, err := d.Client.ImagePull(
 		ctx, d.Config.Image, image.PullOptions{})
 	if err != nil {
-		log.Printf("Error pulling image %s: %v\n", d.Config.Image, err)
+		slog.Error("Error pulling image %s: %v\n", d.Config.Image, err)
 		return DockerResult{Error: err}
 	}
 	io.Copy(os.Stdout, reader)

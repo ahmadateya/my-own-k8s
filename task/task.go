@@ -6,16 +6,6 @@ import (
 	"time"
 )
 
-type State int
-
-const (
-	Pending State = iota
-	Scheduled
-	Running
-	Completed
-	Failed
-)
-
 type Task struct {
 	ID     uuid.UUID
 	Name   string
@@ -29,6 +19,7 @@ type Task struct {
 	ExposedPorts  nat.PortSet
 	PortBindings  map[string]string
 	RestartPolicy string
+	ContainerID   string
 	StartTime     time.Time
 	FinishTime    time.Time
 }
@@ -55,4 +46,22 @@ type Config struct {
 	Disk          int // Disk in GiB
 	Env           []string
 	RestartPolicy string
+}
+
+// NewConfig creates a new Config object from a Task object.
+func NewConfig(t *Task) *Config {
+	return &Config{
+		Name:          t.Name,
+		AttachStdin:   false,
+		AttachStdout:  true,
+		AttachStderr:  true,
+		ExposedPorts:  t.ExposedPorts,
+		Cmd:           []string{},
+		Image:         t.Image,
+		Cpu:           t.Cpu,
+		Memory:        t.Memory,
+		Disk:          t.Disk,
+		Env:           []string{},
+		RestartPolicy: t.RestartPolicy,
+	}
 }

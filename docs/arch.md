@@ -89,6 +89,9 @@ A task core specification is:
   3. Providing relevant statistics to the manager for the purpose of scheduling tasks
   4. Keeping track of its tasks and their states
 
+### The worker components
+![](./images/worker-components.png)
+
 ---
 ## The cluster
 - The cluster is the logical grouping of all the previous components.
