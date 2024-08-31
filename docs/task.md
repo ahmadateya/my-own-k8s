@@ -13,7 +13,7 @@ There are two possible scenarios for handling tasks:
 2. A task is being submitted for the `n_th` time, where the task submitted represents the desired state to which the current task should transition.
 
 #### Naive Heuristic
-- When processing the tasks it receives from the manager, the worker will need to determine which of these scenarios it is dealing with.
+- When the worker processing the tasks it receives from the manager, the worker will need to determine which of these scenarios it is dealing with.
 - The worker uses two main data structures:
   - Queue: Represents the desired state of tasks
   - Db: Represents existing tasks (already seen at least once)
