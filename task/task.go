@@ -17,11 +17,14 @@ type Task struct {
 	// ExposedPorts and PortBindings are used by Docker to ensure the machine allocates the proper network ports
 	// for the task and that it is available on the network.
 	ExposedPorts  nat.PortSet
+	HostPorts     nat.PortMap
 	PortBindings  map[string]string
 	RestartPolicy string
 	ContainerID   string
 	StartTime     time.Time
 	FinishTime    time.Time
+	HealthCheck   string
+	RestartCount  int
 }
 
 // Event (TaskEvent) an internal object that our system uses to trigger tasks from one state to another.

@@ -74,6 +74,9 @@ A task core specification is:
   2. Schedule tasks onto worker machines.
   3. Keep track of tasks, their states, and the machine on which they run.
 
+### The Manager components
+![](./images/manager-components.png)
+
 ---
 ## The worker
 - The worker is the logical representation of a machine in the cluster.

@@ -1,25 +1,25 @@
-package worker
+package manager
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/ahmadateya/my-own-k8s/task"
+	"log"
+	"net/http"
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"log"
-	"log/slog"
-	"net/http"
 )
 
 func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	d := json.NewDecoder(r.Body)
-	d.DisallowUnknownFields()
 
 	te := task.Event{}
 	err := d.Decode(&te)
 	if err != nil {
 		msg := fmt.Sprintf("Error unmarshalling body: %v\n", err)
-		slog.Error(msg)
+		log.Printf(msg)
 		w.WriteHeader(400)
 		e := ErrResponse{
 			HTTPStatusCode: 400,
@@ -29,7 +29,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.Worker.AddTask(te.Task)
+	a.Manager.AddTask(te)
 	log.Printf("Added task %v\n", te.Task.ID)
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(te.Task)
@@ -38,7 +38,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
-	json.NewEncoder(w).Encode(a.Worker.GetTasks())
+	json.NewEncoder(w).Encode(a.Manager.GetTasks())
 }
 
 func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
@@ -49,24 +49,23 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tID, _ := uuid.Parse(taskID)
-	_, ok := a.Worker.Db[tID]
+	taskToStop, ok := a.Manager.TaskDb[tID]
 	if !ok {
 		log.Printf("No task with ID %v found", tID)
 		w.WriteHeader(404)
 	}
 
-	taskToStop := a.Worker.Db[tID]
+	te := task.Event{
+		ID:        uuid.New(),
+		State:     task.Completed,
+		Timestamp: time.Now(),
+	}
 	// we need to make a copy so we are not modifying the task in the datastore
 	taskCopy := *taskToStop
 	taskCopy.State = task.Completed
-	a.Worker.AddTask(taskCopy)
+	te.Task = taskCopy
+	a.Manager.AddTask(te)
 
-	log.Printf("Added task %v to stop container %v\n", taskToStop.ID, taskToStop.ContainerID)
+	log.Printf("Added task event %v to stop task %v\n", te.ID, taskToStop.ID)
 	w.WriteHeader(204)
-}
-
-func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	json.NewEncoder(w).Encode(a.Worker.Stats)
 }

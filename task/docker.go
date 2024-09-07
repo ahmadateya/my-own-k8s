@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -49,6 +50,11 @@ type DockerResult struct {
 	Result      string
 }
 
+type DockerInspectResponse struct {
+	Error     error
+	Container *types.ContainerJSON
+}
+
 func (d *Docker) Run() DockerResult {
 	ctx := context.Background()
 	reader, err := d.Client.ImagePull(
@@ -74,9 +80,10 @@ func (d *Docker) Run() DockerResult {
 	}
 
 	cc := container.Config{
-		Image:        d.Config.Image,
-		Tty:          false,
-		Env:          d.Config.Env,
+		Image: d.Config.Image,
+		Tty:   false,
+		Env:   d.Config.Env,
+		// TODO figure out why there is a difference between the two
 		ExposedPorts: d.Config.ExposedPorts,
 	}
 
@@ -131,4 +138,16 @@ func (d *Docker) Stop(id string) DockerResult {
 	}
 
 	return DockerResult{Action: "stop", Result: "success", Error: nil}
+}
+
+func (d *Docker) Inspect(containerID string) DockerInspectResponse {
+	dc, _ := client.NewClientWithOpts(client.FromEnv)
+	ctx := context.Background()
+	resp, err := dc.ContainerInspect(ctx, containerID)
+	if err != nil {
+		log.Printf("Error inspecting container: %s\n", err)
+		return DockerInspectResponse{Error: err}
+	}
+
+	return DockerInspectResponse{Container: &resp}
 }

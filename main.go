@@ -1,37 +1,44 @@
 package main
 
 import (
+	"fmt"
+	"github.com/ahmadateya/my-own-k8s/manager"
+	"github.com/ahmadateya/my-own-k8s/task"
+	"github.com/ahmadateya/my-own-k8s/worker"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
-	"github.com/my-own-k8s/task"
-	"github.com/my-own-k8s/worker"
-	"log"
-	"time"
 )
 
 func main() {
+	whost := "localhost"
+	wport := 5555
+
+	mhost := "localhost"
+	mport := 5556
+
+	fmt.Println("Starting k8s worker")
+
 	w := worker.Worker{
 		Queue: *queue.New(),
 		Db:    make(map[uuid.UUID]*task.Task),
 	}
-	api := worker.Api{Address: "localhost", Port: 5555, Worker: &w}
+	wapi := worker.Api{Address: whost, Port: wport, Worker: &w}
 
-	go runTasks(&w)
+	go w.RunTasks()
 	go w.CollectStats()
-	api.Start()
-}
+	go w.UpdateTasks()
+	go wapi.Start()
 
-func runTasks(w *worker.Worker) {
-	for {
-		if w.Queue.Len() != 0 {
-			result := w.RunTask()
-			if result.Error != nil {
-				log.Printf("Error running task: %v\n", result.Error)
-			}
-		} else {
-			log.Printf("No tasks to process currently.\n")
-		}
-		log.Println("Sleeping for 10 seconds.")
-		time.Sleep(10 * time.Second)
+	workers := []manager.WorkerAddress{
+		manager.WorkerAddress(fmt.Sprintf("%s:%d", whost, wport)),
 	}
+	m := manager.New(workers)
+	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
+
+	go m.ProcessTasks()
+	go m.UpdateTasks()
+	go m.DoHealthChecks()
+
+	mapi.Start()
+
 }

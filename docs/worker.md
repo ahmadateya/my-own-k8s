@@ -2,7 +2,6 @@
 
 ## How it works
 
-
 ---
 ## TODOs and Spin-offs
 
@@ -23,5 +22,9 @@
      - Metrics Server is a reference implementation of the Metrics API.
   5. **Metrics API:** Kubernetes API supporting access to CPU and memory used for workload autoscaling.
 
-#### TODO
+#### Have a look at Prometheus
+- We need to check how Prometheus works and how it collects the metrics of the machine and the containers running on it.
+  - to use or to mimic Prometheus
+
+#### cAdvisor
 - First use cAdvisor to get the metrics of the containers

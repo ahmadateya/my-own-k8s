@@ -1,4 +1,4 @@
-module github.com/my-own-k8s
+module github.com/ahmadateya/my-own-k8s
 
 go 1.22.3
 
