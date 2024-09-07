@@ -12,8 +12,8 @@ type Task struct {
 	State  State
 	Image  string
 	Cpu    float64
-	Memory int
-	Disk   int
+	Memory uint64
+	Disk   uint64
 	// ExposedPorts and PortBindings are used by Docker to ensure the machine allocates the proper network ports
 	// for the task and that it is available on the network.
 	ExposedPorts  nat.PortSet
@@ -45,8 +45,8 @@ type Config struct {
 	Cmd           []string
 	Image         string
 	Cpu           float64
-	Memory        int // Memory in MiB
-	Disk          int // Disk in GiB
+	Memory        uint64 // Memory in MiB
+	Disk          uint64 // Disk in GiB
 	Env           []string
 	RestartPolicy string
 }

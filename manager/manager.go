@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/ahmadateya/my-own-k8s/node"
+	"github.com/ahmadateya/my-own-k8s/scheduler"
 	"github.com/ahmadateya/my-own-k8s/task"
 	"github.com/ahmadateya/my-own-k8s/worker"
 	"github.com/docker/go-connections/nat"
@@ -26,15 +28,34 @@ type Manager struct {
 	WorkerTaskMap map[WorkerAddress][]uuid.UUID // [WorkerAddress]taskID
 	TaskWorkerMap map[uuid.UUID]WorkerAddress   // [taskID]WorkerAddress
 	LastWorker    int
+
+	WorkerNodes []*node.Node
+	Scheduler   scheduler.Scheduler
 }
 
-func New(workers []WorkerAddress) *Manager {
+func New(workers []WorkerAddress, schedulerType string) *Manager {
 	taskDb := make(map[uuid.UUID]*task.Task)
 	eventDb := make(map[uuid.UUID]*task.Event)
 	workerTaskMap := make(map[WorkerAddress][]uuid.UUID)
 	taskWorkerMap := make(map[uuid.UUID]WorkerAddress)
+	var nodes []*node.Node
+
 	for w := range workers {
 		workerTaskMap[workers[w]] = []uuid.UUID{}
+
+		nAPI := fmt.Sprintf("http://%v", workers[w])
+		n := node.New(string(workers[w]), nAPI, "worker")
+		nodes = append(nodes, n)
+	}
+
+	var s scheduler.Scheduler
+	switch schedulerType {
+	case "roundrobin":
+		s = &scheduler.RoundRobin{Name: "roundrobin"}
+	case "epvm":
+		s = &scheduler.Epvm{Name: "epvm"}
+	default:
+		s = &scheduler.RoundRobin{Name: "roundrobin"}
 	}
 
 	return &Manager{
@@ -44,6 +65,8 @@ func New(workers []WorkerAddress) *Manager {
 		EventDb:       eventDb,
 		WorkerTaskMap: workerTaskMap,
 		TaskWorkerMap: taskWorkerMap,
+		WorkerNodes:   nodes,
+		Scheduler:     s,
 	}
 }
 
@@ -51,17 +74,16 @@ func (m *Manager) AddTask(te task.Event) {
 	m.Pending.Enqueue(te)
 }
 
-func (m *Manager) SelectWorker() WorkerAddress {
-	// simple round-robin algorithm
-	var newWorker int
-	if newWorker+1 < len(m.Workers) { // if there are more workers
-		newWorker = m.LastWorker + 1
-		m.LastWorker++
-	} else {
-		newWorker = 0
-		m.LastWorker = 0
+func (m *Manager) SelectWorker(t task.Task) (*node.Node, error) {
+	candidates := m.Scheduler.SelectCandidateNodes(t, m.WorkerNodes)
+	if candidates == nil {
+		msg := fmt.Sprintf("No available candidates match resource request for task %v", t.ID)
+		err := fmt.Errorf(msg)
+		return nil, err
 	}
-	return m.Workers[newWorker]
+	scores := m.Scheduler.Score(t, candidates)
+	selectedNode := m.Scheduler.Pick(scores, candidates)
+	return selectedNode, nil
 }
 
 func (m *Manager) UpdateTasks() {
@@ -132,51 +154,73 @@ func (m *Manager) GetTasks() []*task.Task {
 
 func (m *Manager) SendWork() {
 	if m.Pending.Len() > 0 {
-		w := m.SelectWorker()
 		e := m.Pending.Dequeue()
 		te := e.(task.Event)
-		t := te.Task
-		slog.Info(fmt.Sprintf("Pulled %v off pending queue\n", t))
-
 		m.EventDb[te.ID] = &te
-		m.WorkerTaskMap[w] = append(m.WorkerTaskMap[w], te.Task.ID)
-		m.TaskWorkerMap[t.ID] = w
+		log.Printf("Pulled %v off pending queue", te)
+
+		taskWorker, ok := m.TaskWorkerMap[te.Task.ID]
+		if ok {
+			persistedTask := m.TaskDb[te.Task.ID]
+			if te.State == task.Completed && task.ValidStateTransition(persistedTask.State, te.State) {
+				m.stopTask(string(taskWorker), te.Task.ID.String())
+				return
+			}
+
+			log.Printf("invalid request: existing task %s is in state %v and cannot transition to the completed state", persistedTask.ID.String(), persistedTask.State)
+			return
+		}
+
+		t := te.Task
+		w, err := m.SelectWorker(t)
+		if err != nil {
+			log.Printf("error selecting worker for task %s: %v", t.ID, err)
+			return
+		}
+
+		log.Printf("[manager] selected worker %s for task %s", w.Name, t.ID)
+
+		m.WorkerTaskMap[WorkerAddress(w.Name)] = append(m.WorkerTaskMap[WorkerAddress(w.Name)], te.Task.ID)
+		m.TaskWorkerMap[t.ID] = WorkerAddress(w.Name)
 
 		t.State = task.Scheduled
 		m.TaskDb[t.ID] = &t
 
 		data, err := json.Marshal(te)
 		if err != nil {
-			slog.Error(fmt.Sprintf("Unable to marshal task object: %v.\n", t))
+			log.Printf("Unable to marshal task object: %v.", t)
 		}
-		url := fmt.Sprintf("http://%s/tasks", w)
+
+		url := fmt.Sprintf("http://%s/tasks", w.Name)
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
 		if err != nil {
-			slog.Error(fmt.Sprintf("Error connecting to %v: %v\n", w, err))
-			m.Pending.Enqueue(te)
+			log.Printf("[manager] Error connecting to %v: %v", w, err)
+			m.Pending.Enqueue(t)
 			return
 		}
+
 		d := json.NewDecoder(resp.Body)
 		if resp.StatusCode != http.StatusCreated {
 			e := worker.ErrResponse{}
 			err := d.Decode(&e)
 			if err != nil {
-				slog.Error(fmt.Sprintf("Error decoding response: %s\n", err.Error()))
+				fmt.Printf("Error decoding response: %s\n", err.Error())
 				return
 			}
-			slog.Info(fmt.Sprintf("Response error (%d): %s", e.HTTPStatusCode, e.Message))
+			log.Printf("Response error (%d): %s", e.HTTPStatusCode, e.Message)
 			return
 		}
 
 		t = task.Task{}
 		err = d.Decode(&t)
 		if err != nil {
-			slog.Error("Error decoding response: %s\n", err.Error())
+			fmt.Printf("Error decoding response: %s\n", err.Error())
 			return
 		}
-		slog.Info(fmt.Sprintf("%#v\n", t))
+		w.TaskCount++
+		log.Printf("[manager] received response from worker: %#v\n", t)
 	} else {
-		slog.Info("No work in the queue")
+		log.Println("No work in the queue")
 	}
 }
 
@@ -290,4 +334,27 @@ func (m *Manager) DoHealthChecks() {
 		log.Println("Sleeping for 60 seconds")
 		time.Sleep(60 * time.Second)
 	}
+}
+
+func (m *Manager) stopTask(worker string, taskID string) {
+	client := &http.Client{}
+	url := fmt.Sprintf("http://%s/tasks/%s", worker, taskID)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		log.Printf("error creating request to delete task %s: %v\n", taskID, err)
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("error connecting to worker at %s: %v\n", url, err)
+		return
+	}
+
+	if resp.StatusCode != 204 {
+		log.Printf("Error sending request: %v\n", err)
+		return
+	}
+
+	log.Printf("task %s has been scheduled to be stopped", taskID)
 }

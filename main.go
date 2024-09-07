@@ -32,7 +32,7 @@ func main() {
 	workers := []manager.WorkerAddress{
 		manager.WorkerAddress(fmt.Sprintf("%s:%d", whost, wport)),
 	}
-	m := manager.New(workers)
+	m := manager.New(workers, "epvm")
 	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
 
 	go m.ProcessTasks()
