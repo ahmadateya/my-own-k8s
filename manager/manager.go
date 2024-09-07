@@ -407,3 +407,16 @@ func (m *Manager) stopTask(worker WorkerAddress, taskID string) {
 
 	log.Printf("task %s has been scheduled to be stopped", taskID)
 }
+
+func (m *Manager) UpdateNodeStats() {
+	for {
+		for _, node := range m.WorkerNodes {
+			log.Printf("Collecting stats for node %v", node.Name)
+			_, err := node.GetStats()
+			if err != nil {
+				log.Printf("error updating node stats: %v", err)
+			}
+		}
+		time.Sleep(15 * time.Second)
+	}
+}
